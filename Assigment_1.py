@@ -11,6 +11,8 @@ x = 13
 n_seis = 10
 v1 = 5          #5km/s
 v2 = 5.2        #5.2km/s
+save_fig = False
+verbose = False
 cmap_list = ["YlOrBr","Blues", "dark:salmon_r","#69d","seagreen","cubehelix","crest","flare","mako","rocket","Dark2_r","YlGnBu"]
 #%%
 
@@ -36,7 +38,13 @@ def model_anomaly(x1, x2, z1, z2):
 
 
 #calculate t_pure
-def calculate_t(slowness_mat,flat_mat=False, verbose=False):
+def calculate_t(slowness_mat,flat_mat=False):
+    """
+
+    :param slowness_mat: 11X13 slowness matrix
+    :param flat_mat: bool if True returns 1X20 1d t_pure
+    :return: 2X10 t_pure matrix
+    """
     # earthquake 1 (from the left)
     #flip order of the matrix and get the trace increasing from 2X2 (first detector) to 3X3... until 10X10(last detector)
     tr_eqk1 = [np.trace(np.fliplr(slowness_mat[0:i, 0:i])) for i in range(2, 12)]
@@ -67,7 +75,7 @@ def calculate_t(slowness_mat,flat_mat=False, verbose=False):
 def G_mat():
     """
 
-    :return: G matrix
+    :return: 20X143 G matrix
     """
   #matrix G is 20 columns, and z*x rows
     G = np.zeros([n_seis*2,x*z])
@@ -78,13 +86,13 @@ def G_mat():
     for i in range(n_seis,n_seis*2):
         j = i - n_seis
         G[i] = np.ravel(np.eye(z,x,2+j))
+        #G * distance in each square =sqrt(2)
     return G * math.sqrt(2)
 
 #create noise
-def calculate_noise(slowness_mat,verbose=False):
+def calculate_noise(slowness_mat):
     """
-
-    :param verbose: print message of test comparison of noise condition
+    :param slowness_mat: 11X13 slowness matrix
     :return: noise vector
     """
     #normal distributed with mean value 0
@@ -105,9 +113,10 @@ def calculate_noise(slowness_mat,verbose=False):
 def calculate_t_obs(n,slowness_mat,flat_mat=True):
     """
 
-    :param n: nosie vector
+    :param n: noise vector
+    :param slowness_mat: 11X13 slowness matrix
     :param flat_mat: returns t_obs as a 1d vector
-    :return: t_obs as a 2X10 vector(number of earthquakesXnumber of detectors)
+    :return: t_obs as a 2X10 vector(number of earthquakes X number of detectors)
     """
     t_pure1d = calculate_t(slowness_mat,flat_mat=True)
     t_obs1d = t_pure1d + n
@@ -122,10 +131,25 @@ def calculate_t_obs(n,slowness_mat,flat_mat=True):
 # find the solution using tikhonov regularization
 # build a tikhonov regularization function
 def tikhonov_reg(G,d,eps):
+    """
+
+    :param G: 20X143 G matrix calculated with G_mat()
+    :param d: data parameters d=Gm in this case 1d t_obs
+    :param eps: float optimization parameter
+    :return: calculated model
+    """
     m = np.linalg.inv(G.T@G + np.identity(143)*eps**2)@G.T@d
     return m
 
 def solve_eps(eps,G,d,error):
+    """
+
+    :param eps: float optimization parameter calculated with calculate_epsilon()
+    :param G: 20X143 G matrix calculated with G_mat()
+    :param d: data parameters d=Gm in this case 1d t_obs
+    :param error: noise std
+    :return: optimization value where epsilon minimize the error
+    """
     m = tikhonov_reg(G,d,eps)
     s = np.abs(np.linalg.norm(d - G@m) - d.shape[0]*error**2)
 
@@ -157,7 +181,7 @@ def calculate_epsilon(n,G,t_obs1d):
 
 #%%plots functions
 
-def models_plots(M1, M2, r1, r2, color1, color2, name1, name2, save_fig=False):
+def models_plots(M1, M2, r1, r2, color1, color2, name1, name2):
     """
 
     :param M1: Matrix  1
@@ -167,8 +191,7 @@ def models_plots(M1, M2, r1, r2, color1, color2, name1, name2, save_fig=False):
     :param color1: heatmap colors from cmap_list
     :param color2: heatmap colors from cmap_list
     :param name1: 1st figure title
-    :param name2: 1st figure title
-    :param save_fig: if true save figure
+    :param name2: 2nd figure title
     :return: plot of 2 model matrix
     """
     fig, axs = plt.subplots(1, 2, figsize=(12, 6))
@@ -185,7 +208,7 @@ def models_plots(M1, M2, r1, r2, color1, color2, name1, name2, save_fig=False):
     plt.show()
 
 
-def seismograph_times_plot(M, r,name,color, save_fig=False):
+def seismograph_times_plot(M, r,name,color):
     """
 
     :param M: Seismograph time detection matrix
@@ -203,7 +226,7 @@ def seismograph_times_plot(M, r,name,color, save_fig=False):
     plt.show()
 
 #plot epsilon minimization fit
-def plot_epsilon(eps,s,min_eps,min_index, name,save_fig=False):
+def plot_epsilon(eps,s,min_eps,min_index, name):
     """
 
     :param eps: range of epsilons
@@ -211,7 +234,6 @@ def plot_epsilon(eps,s,min_eps,min_index, name,save_fig=False):
     :param min_eps: minimum epsilon
     :param min_index: minimum epsilon index
     :param name: name to save graph
-    :param save_fig: if True plot will be saved
     :return: Error vs epsilon plot
     """
     fig, ax = plt.subplots(figsize = (10,4))
@@ -226,7 +248,7 @@ def plot_epsilon(eps,s,min_eps,min_index, name,save_fig=False):
 #%%
 
 #%% run code
-def run_code(x1,x2,z1,z2):
+def model_simulation(x1,x2,z1,z2):
     #get matrices
     #slowness_mat, velocity_mat = model_anomaly(4,7,1,9)
     slowness_mat, velocity_mat = model_anomaly(x1, x2, z1, z2)
@@ -252,11 +274,20 @@ def run_code(x1,x2,z1,z2):
     t_obs = calculate_t_obs(n,slowness_mat,flat_mat=False)
     #plot sesimograph observed  times
     seismograph_times_plot(t_obs, 5,'observed',cmap_list[11])
-    #get model matrix
-    epsilons,solutions, min_eps, min_index = calculate_epsilon(n,G,t_obs1d)
+    return slowness_mat,n,G,t_obs1d
+
+# calculate problem with original anomaly x1=4,x2=7,z1=1,z2=9 to get slowness_mat, G matrix, noise and t_obs
+slowness_mat, n,G, t_obs1d = model_simulation(4,7,1,9)
+
+#calculate optimal epsilon
+epsilons,solutions, min_eps, min_index = calculate_epsilon(n,G,t_obs1d)
+
+#calculate model with optimal epsilon
+def model_calculation(G, t_obs1d,min_eps,min_index,slowness_mat,eps_plot=False):
     m = tikhonov_reg(G,t_obs1d,min_eps)
     #plot
-    plot_epsilon(epsilons,solutions,min_eps,min_index,'epsilon_vs_error')
+    if eps_plot:
+        plot_epsilon(epsilons,solutions,min_eps,min_index,'epsilon_vs_error')
     # create a 11X13 m matrix for visualization
     m_mat = m.reshape(z,x)*1e3
     #plot model obtained after tikhonov_reg with real model
@@ -265,19 +296,25 @@ def run_code(x1,x2,z1,z2):
     #calculate t
     t = G@m
     t_mat = t.reshape(2,10)
-    # plot sesimograph model calculated  times
+    # plot seismograph model calculated times
     seismograph_times_plot(t_mat, 5,'calculated',cmap_list[11])
     #test
     t_obs = calculate_t_obs(n,slowness_mat,flat_mat=False)
     test2 = np.round(t,4)==np.round(np.ravel(t_obs),4)
     if test2.all():
-        print("m model is correct")
+        print("m model match input")
     else:
         print('Estimated model does not match input (as was to be expected).')
 
 
-# calculate problem with original anomaly x1=4,x2=7,z1=1,z2=9
-#run_code(4,7,1,9)
+model_calculation(G, t_obs1d,min_eps,min_index,slowness_mat,eps_plot=True)
 
-# calculate problem with delta anomaly anomaly x1=6,x2=7,z1=1,z2=3
-run_code(6,7,1,3)
+#%%test anomaly
+
+# calculate problem with 1X1 anomaly x1=6,x2=7,z1=1,z2=3 to get slowness_mat, G matrix, noise and t_obs
+slowness_anomaly, n_anomaly,G_anomaly, t_obs1d_anomaly = model_simulation(6,7,1,2)
+model_calculation(G_anomaly, t_obs1d_anomaly,min_eps,min_index,slowness_anomaly)
+
+# calculate problem with 1X6 anomaly x1=6,x2=7,z1=1,z2=3 to get slowness_mat, G matrix, noise and t_obs
+slowness_anomaly2, n_anomaly2,G_anomaly2, t_obs1d_anomaly2 = model_simulation(6,7,1,7)
+model_calculation(G_anomaly2, t_obs1d_anomaly2,min_eps,min_index,slowness_anomaly2)
